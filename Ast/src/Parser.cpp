@@ -1,12 +1,15 @@
 // This file is part of the Luau programming language and is licensed under MIT License; see LICENSE.txt for details
 #include "Luau/Parser.h"
 
+#include "Luau/Allocator.h"
+#include "Luau/Ast.h"
 #include "Luau/Common.h"
 #include "Luau/TimeTrace.h"
 
 #include <algorithm>
 
 #include <errno.h>
+#include <iostream>
 #include <limits.h>
 #include <string.h>
 
@@ -426,6 +429,7 @@ AstStatBlock* Parser::parseBlockNoScope()
 // laststat ::= return [explist] | break
 AstStat* Parser::parseStat()
 {
+    
     // guess the type from the token type
     switch (lexer.current().type)
     {
@@ -2951,6 +2955,8 @@ std::optional<AstExprBinary::Op> Parser::parseBinaryOp(const Lexeme& l)
         return AstExprBinary::And;
     else if (l.type == Lexeme::ReservedOr)
         return AstExprBinary::Or;
+    else if (l.type == Lexeme::PipeForward)
+        return AstExprBinary::PipeForward;
     else
         return std::nullopt;
 }
@@ -3032,6 +3038,46 @@ std::optional<AstExprBinary::Op> Parser::checkBinaryConfusables(const BinaryOpPr
     return std::nullopt;
 }
 
+AstExpr* Parser::parsePipeForward(AstExpr* left, AstExpr* right)
+{
+    if (auto* call = right->as<AstExprCall>())
+    {
+        AstArray<AstExpr*> newArgs;
+        newArgs.size = call->args.size + 1;
+        newArgs.data = (AstExpr**)allocator.allocate(newArgs.size * sizeof(AstExpr*));
+        newArgs.data[0] = left;
+        for (size_t i = 0; i < call->args.size; i++) 
+        {
+            newArgs.data[i+1] = call->args.data[i];
+        }
+
+        return allocator.alloc<AstExprCall>
+        (
+            Location(left->location.begin, right->location.end),
+            call->func,
+            newArgs,
+            call->self,
+            AstArray<AstTypeOrPack>{},
+            call->argLocation
+        );
+    }
+
+    AstArray<AstExpr*> args;
+    args.data = allocator.alloc<AstExpr*>();
+    args.size = 1;
+    args.data[0] = left;
+
+    return allocator.alloc<AstExprCall>
+    (
+        Location(left->location.begin, right->location.end),
+        right,          
+        args,           
+        false,         
+        AstArray<AstTypeOrPack>{},
+        left->location
+    );
+}
+
 // subexpr -> (asexp | unop subexpr) { binop subexpr }
 // where `binop' is any binary operator with a priority higher than `limit'
 AstExpr* Parser::parseExpr(unsigned int limit)
@@ -3045,6 +3091,7 @@ AstExpr* Parser::parseExpr(unsigned int limit)
         {7, 7},  // `%'
         {10, 9}, // power (right associative)
         {5, 4},  // concat (right associative)
+        {4, 4}, // '|>'
         {3, 3},  // inequality
         {3, 3},  // equality
         {3, 3},  // '<'
@@ -3102,10 +3149,16 @@ AstExpr* Parser::parseExpr(unsigned int limit)
 
         // read sub-expression with higher priority
         AstExpr* next = parseExpr(binaryPriority[*op].right);
-
-        expr = allocator.alloc<AstExprBinary>(Location(start, next->location), *op, expr, next);
-        if (options.storeCstData)
-            cstNodeMap[expr] = allocator.alloc<CstExprOp>(opPosition);
+        if (op == AstExprBinary::PipeForward) 
+        {
+            expr = parsePipeForward(expr, next);
+        } 
+        else 
+        {
+            expr = allocator.alloc<AstExprBinary>(Location(start, next->location), *op, expr, next);
+            if (options.storeCstData)
+                cstNodeMap[expr] = allocator.alloc<CstExprOp>(opPosition);
+        }
         op = parseBinaryOp(lexer.current());
 
         if (!op)

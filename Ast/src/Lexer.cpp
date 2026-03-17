@@ -6,6 +6,7 @@
 #include "Luau/Confusables.h"
 #include "Luau/StringUtils.h"
 
+#include <iostream>
 #include <limits.h>
 
 namespace Luau
@@ -171,6 +172,9 @@ std::string Lexeme::toString() const
         {
             return "invalid UTF-8 sequence";
         }
+    
+    case PipeForward:
+        return "|>";
 
     default:
         if (type < Char_END)
@@ -984,7 +988,13 @@ Lexeme Lexer::readNext()
     {
         char ch = peekch();
         consume();
+        char ch2 = peekch();
 
+        if (ch2 == '>') 
+        {
+            consume();
+            return Lexeme(Location(start, 2), Lexeme::PipeForward);
+        }
         return Lexeme(Location(start, 1), ch);
     }
     case '@':

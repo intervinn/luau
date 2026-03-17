@@ -610,6 +610,7 @@ public:
         CompareGe,
         And,
         Or,
+        PipeForward,
 
         Op__Count
     };

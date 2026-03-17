@@ -145,6 +145,9 @@ private:
     // funcname ::= Name {`.' Name} [`:' Name]
     AstExpr* parseFunctionName(bool& hasself, AstName& debugname);
 
+    // expr |> expr
+    AstExpr* parsePipeForward(AstExpr* left, AstExpr* right);
+
     // function funcname funcbody
     LUAU_FORCEINLINE AstStat* parseFunctionStat(const AstArray<AstAttr*>& attributes = {nullptr, 0});
 

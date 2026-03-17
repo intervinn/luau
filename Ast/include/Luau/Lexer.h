@@ -45,6 +45,7 @@ struct Lexeme
         ModAssign,
         PowAssign,
         ConcatAssign,
+        PipeForward,
 
         RawString,
         QuotedString,
